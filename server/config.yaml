@@ -1,0 +1,20 @@
+# Model service configuration. Override any value from scripts/run_server.sh flags if needed.
+python_bin: .venv/bin/python
+transport: websocket
+shared_memory_socket_path: /tmp/openpi_policy.sock
+port: 8000
+websocket_workers: 2
+websocket_queue_size: 16
+default_prompt: fold the sleeve
+use_legato_inference: false
+use_ttrtc_inference: false
+use_snapflow_inference: false
+record: false
+log_level: INFO
+log_file: logs/server.log
+event_log_file: logs/server_events.jsonl
+request_log_every_n: 1
+policy:
+  type: checkpoint
+  config: pi05_flatten_fold_normal
+  dir: /path/to/checkpoint

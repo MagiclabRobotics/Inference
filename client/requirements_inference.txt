@@ -1,0 +1,15 @@
+# Direct-hardware Agilex inference client dependencies.
+# Install into the uv-created repo virtualenv after running `uv sync`.
+numpy>=1.22.4,<2.0.0
+opencv-python>=4.9.0.80
+pyyaml>=6.0
+h5py>=3.8.0
+PyQt5>=5.15
+pyqtgraph>=0.13
+piper_sdk
+pyrealsense2
+python-can>=3.3.4
+# Policy 通信使用的序列化依赖。
+msgpack>=1.0
+# [collection] Piper 采集服务的键盘事件与录制控制。
+lcm>=1.4

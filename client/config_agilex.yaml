@@ -1,0 +1,205 @@
+runtime:
+  backend: sdk
+
+server:
+  transport: websocket
+  host: 127.0.0.1
+  port: 8123
+  shared_memory_socket_path: /tmp/openpi_policy.sock
+  connections_per_endpoint: 2
+  max_in_flight: 8
+  result_timeout_s: 0.0
+  first_result_timeout_s: 0.0
+
+python_bin: .venv/bin/python
+
+keyboard_control:
+  enabled: false  # Enable here or pass --keyboard-control for interactive episodes.
+  start_paused: true
+  start_key: s
+  stop_key: space
+  quit_key: q
+
+can:
+  activate: true
+  bitrate: 1000000
+  left:
+    name: can_left_slave
+    usb: REPLACE_WITH_LEFT_USB_PORT
+  right:
+    name: can_right_slave
+    usb: REPLACE_WITH_RIGHT_USB_PORT
+
+camera:
+  enable: true
+  width: 640
+  height: 480
+  fps: 30
+  use_depth: false
+  front:
+    serial: "REPLACE_WITH_FRONT_CAMERA_SERIAL"
+    model_key: top_head
+  right:
+    serial: "REPLACE_WITH_RIGHT_CAMERA_SERIAL"
+    model_key: hand_right
+  left:
+    serial: "REPLACE_WITH_LEFT_CAMERA_SERIAL"
+    model_key: hand_left
+
+arm:
+  auto_enable: true
+  gripper_exist: true
+  gripper_multiple: 1
+  control_mode: high_follow  # position: 30 Hz direct JointCtrl | high_follow: 200 Hz local interpolation
+  right_offset: 0.003
+  command_velocity: 100
+  gripper_effort: 1000
+  high_follow:
+    control_hz: 200
+    max_queue_size: 32
+    max_joint_vel: [2.0, 2.0, 2.0, 2.5, 2.5, 2.5]
+    interpolator:
+      type: waypoint_cubic  # linear: safer/simple | waypoint_cubic: smoother high-follow waypoints
+      tangent_mode: centripetal  # uniform: simple tangent | centripetal: usually less overshoot
+      monotone_projection: true  # true limits cubic overshoot on monotonic segments
+      monotone_projection_dims: arm  # arm: project 6 arm joints per side | all: include grippers
+      duration_scale: 1.0  # >1.0 slows interpolation; <1.0 is more aggressive
+      min_duration_s: 0.0  # 0 disables lower clamp
+      max_duration_s: 0.0  # 0 disables upper clamp
+  init_steps: 100
+  init_sleep_s: 0.01
+  init_action:
+    left: [0.0, 0.32, -0.36, 0.0, 0.24, 0.0, 0.07]
+    right: [0.0, 0.32, -0.36, 0.0, 0.24, 0.0, 0.07]
+  shutdown_action:
+    enabled: true
+    left: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.07]
+    right: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.07]
+    steps: 200
+    sleep_s: 0.01
+
+inference:
+  execution_mode: async
+  async_mode: temporal_smoothing
+  # [collection] run_inference_service.py --mode 可选集合（仅服务侧读取/校验；
+  # 纯推理入口 agilex_inference_openpi.py 走 execution_mode/async_mode，忽略本字段）
+  available_modes:
+    - sync
+    - base
+    - naive_async
+    - temporal_smoothing
+    - temporal_ensembling
+    - vlash_async
+    - rtc
+    - legato_async
+    - ttrtc_async
+  ctrl_type: joint
+  chunk_size: 50
+  max_publish_step: 10000
+  publish_rate: 30
+  observation_rate: 30
+  inference_rate: 3
+  # Action chunk post-processing. Temporal smoothing is the default runtime behavior,
+  # not a separate algorithm mode. Use raw only for debugging or direct chunk switches.
+  action_buffer: stream  # stream | traceable
+  num_denoising_steps: 10
+
+  prompt: fold the paper box
+  log_every_steps: 30
+  modes:
+    sync: {}
+    async:
+      naive: {}
+      temporal_smoothing:
+        latency_k: 8
+        min_smooth_steps: 8
+      temporal_ensembling:
+        latency_k: 8
+        min_smooth_steps: 8
+        ensemble_new_weight: 0.6
+      rtc:
+        execute_horizon: 8
+        mask_prefix_delay: false
+        prefix_attention_schedule: exp
+        max_guidance_weight: 0.5
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        delay_clip_max: 4
+        smooth_method: raw
+      legato:
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        ramp_down_steps: 22
+        smooth_method: raw
+      ttrtc:
+        sample_num_steps: 5
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        delay_clip_max: 4
+        smooth_method: raw
+      vlash:
+        enable_future_state_injection: true
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        delay_clip_max: 4
+        smooth_method: raw
+
+recording:
+  record_model_io: true
+  record_policy_rollout: false
+  record_runtime_events: true
+  record_action_steps: true
+  root_dir: client/inference_records
+  unique_run_dir: false  # true: group episodes under one run_<timestamp>_<pid> directory.
+  fps: 10
+  policy_rollout_fps: 30
+  queue_size: 4096
+  video_codec: mp4v
+
+telemetry_plot:
+  enabled: false
+  auto_start: true
+  window_sec: 10.0
+  queue_size: 4096
+  default_arms: [left]  # left | right | [left, right]
+  default_topics:
+    - cmd_high_follow_200hz
+    - state_200hz
+  publish:
+    vla_command: true
+    high_follow_command: true
+    state: true
+
+# ===== [collection] 采集架构推理服务 =====
+# 仅 run_inference_service.py 读取以下三段；纯推理入口 agilex_inference_openpi.py 不读，零影响。
+# 推理服务 TCP（piperserver use_inference_service=true 时连接）
+inference_service:
+  listen_host: 0.0.0.0
+  listen_port: 9001
+
+# 采集对接：关节走 TCP 9000 get_joint_state；图像本进程订阅 ROS
+collector:
+  host: 127.0.0.1
+  port: 9000
+  camera_names: ["top_head", "hand_right", "hand_left"]
+  image_topics:
+    - "/sensor/cam_front/color_jpg"
+    - "/sensor/cam_right/color_jpg"
+    - "/sensor/cam_left/color_jpg"
+  sync_frame_timeout_s: 2.0
+  frame_deque_maxlen: 300
+  keyboard_lcm:
+    enabled: true
+    channel: keyboard_event
+    lcm_url: ""
+    handle_timeout_ms: 50
+    # LCM save_path 常由采集端以 root 创建；推理服务无写权限时落到 fallback_save_root
+    fallback_save_root: client/inference_records/inference_frame_traces
+
+# 可插拔 Robot IO：采集服务用 CollectorRobotIO；纯推理仍直接构造 AgilexRobotIO（不读本段）
+robot_io:
+  entry_point: "integration.collector_robot_io:create_from_config"

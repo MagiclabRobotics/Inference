@@ -1,0 +1,128 @@
+runtime:
+  backend: sdk
+
+server:
+  transport: websocket
+  host: 127.0.0.1
+  port: 8000
+  shared_memory_socket_path: /tmp/openpi_policy.sock
+  connections_per_endpoint: 2
+  max_in_flight: 8
+  result_timeout_s: 0.0
+  first_result_timeout_s: 0.0
+
+python_bin: .venv/bin/python
+
+robot_io:
+  type: mock_lerobot
+  dataset_root: test/assets/task_a_base_episode001_subset
+  episode_index: 0
+  state_key: observation.state
+  loop: true
+  allow_missing_images: false
+  image_keys:
+    top_head: observation.images.top_head
+    hand_right: observation.images.hand_right
+    hand_left: observation.images.hand_left
+
+can:
+  activate: false
+  bitrate: 1000000
+  left:
+    name: can_left_slave
+    usb: REPLACE_WITH_LEFT_USB_PORT
+  right:
+    name: can_right_slave
+    usb: REPLACE_WITH_RIGHT_USB_PORT
+
+camera:
+  enable: false
+  width: 640
+  height: 480
+  fps: 30
+  use_depth: false
+  front:
+    serial: "REPLACE_WITH_FRONT_CAMERA_SERIAL"
+    model_key: top_head
+  right:
+    serial: "REPLACE_WITH_RIGHT_CAMERA_SERIAL"
+    model_key: hand_right
+  left:
+    serial: "REPLACE_WITH_LEFT_CAMERA_SERIAL"
+    model_key: hand_left
+
+arm:
+  auto_enable: true
+  gripper_exist: true
+  gripper_multiple: 1
+  right_offset: 0.003
+  command_velocity: 100
+  gripper_effort: 1000
+  init_steps: 100
+  init_sleep_s: 0.01
+  init_action:
+    left: [0.0, 0.32, -0.36, 0.0, 0.24, 0.0, 0.07]
+    right: [0.0, 0.32, -0.36, 0.0, 0.24, 0.0, 0.07]
+
+inference:
+  execution_mode: async
+  async_mode: temporal_smoothing
+  ctrl_type: joint
+  chunk_size: 50
+  max_publish_step: 10000
+  publish_rate: 30
+  observation_rate: 30
+  inference_rate: 3
+  num_denoising_steps: 5
+  prompt: fold the sleeve
+  action_buffer: traceable
+  log_every_steps: 30
+  modes:
+    sync: {}
+    async:
+      naive: {}
+      temporal_smoothing:
+        latency_k: 8
+        min_smooth_steps: 8
+      temporal_ensembling:
+        latency_k: 8
+        min_smooth_steps: 8
+        ensemble_new_weight: 0.6
+      rtc:
+        execute_horizon: 8
+        mask_prefix_delay: false
+        prefix_attention_schedule: exp
+        max_guidance_weight: 0.5
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        delay_clip_max: 4
+      legato:
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        ramp_down_steps: 22
+        smooth_method: raw
+      ttrtc:
+        sample_num_steps: 5
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        delay_clip_max: 4
+        smooth_method: raw
+      vlash:
+        enable_future_state_injection: true
+        delay_window: 20
+        delay_stat: median
+        delay_margin_steps: 0
+        delay_clip_max: 4
+
+recording:
+  record_model_io: true
+  record_runtime_events: true
+  record_action_steps: true
+  root_dir: client/inference_records
+  unique_run_dir: false
+  fps: 10
+  queue_size: 4096
+  video_codec: mp4v
