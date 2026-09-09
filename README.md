@@ -1,37 +1,27 @@
 # Inference
 
-VLA policy server 与 Agilex Piper 双臂推理客户端。项目支持 WebSocket / 共享内存传输、SDK/CAN 直连控制、采集服务对接，以及无硬件 Mock 测试。
+VLA policy server and Agilex Piper dual-arm inference client. The project supports WebSocket and shared-memory transports, direct SDK/CAN control, data-collection integration, and hardware-free mock testing.
 
-[English](readme_en.md)
+[中文](README_zh-CN.md)
 
-## 支持范围
+## Features
 
-- Piper 双臂：每侧 6 个关节和 1 个夹爪，共 14 维动作
-- 推理模式：同步、naive async、temporal smoothing、temporal ensembling、RTC、Legato、TTRTC、VLASH
-- Policy 后端：JAX checkpoint、TensorRT engine
-- 传输方式：跨机器 WebSocket、同机共享内存
-- 运行记录：模型 I/O、视频、动作、延迟与事件日志
+- Dual Piper arms with 14-dimensional actions
+- Sync, naive async, temporal smoothing, temporal ensembling, RTC, Legato, TTRTC, and VLASH modes
+- JAX checkpoint and TensorRT policy backends
+- WebSocket for remote deployment and shared memory for same-host deployment
+- Model I/O, video, action, latency, and event recording
 
-## 目录
+## Installation
 
-```text
-client/      推理客户端、采集对接与工具
-server/      Policy server 与模型代码
-scripts/     启动、CAN 配置和调试脚本
-docs/        接口与集成文档
-test/        测试与 Mock 数据
-```
-
-## 安装
-
-要求 Python 3.11 和 [uv](https://docs.astral.sh/uv/)。
+Python 3.11 and [uv](https://docs.astral.sh/uv/) are required.
 
 ```bash
 uv sync --python 3.11
 . .venv/bin/activate
 ```
 
-运行机器人客户端时还需安装硬件依赖：
+Robot clients also require:
 
 ```bash
 uv pip install -r client/requirements_inference.txt
@@ -39,11 +29,11 @@ sudo apt update
 sudo apt install -y can-utils ethtool
 ```
 
-## 快速开始
+## Quick start
 
-### 1. 配置并启动服务端
+### Server
 
-编辑 `server/config.yaml`：
+Edit `server/config.yaml`:
 
 ```yaml
 python_bin: .venv/bin/python
@@ -58,27 +48,23 @@ policy:
   asset_id: OpenDriveLab-org/Kai0
 ```
 
-`policy.config` 必须与训练时的模型结构和 transforms 一致。`asset_id` 对应：
+`policy.config` must match the model architecture and transforms used for training. Norm stats are loaded from:
 
 ```text
 /path/to/checkpoint/assets/<asset_id>/norm_stats.json
 ```
 
-启动服务：
+Start the server:
 
 ```bash
 ./scripts/run_server.sh --config server/config.yaml
 ```
 
-可先检查启动命令：
+Use `./scripts/run_server.sh --dry-run` to inspect the launch command first.
 
-```bash
-./scripts/run_server.sh --dry-run
-```
+### Client
 
-### 2. 配置并启动客户端
-
-在 `client/config_agilex.yaml` 中设置服务地址、CAN 设备、相机序列号、初始姿态和推理模式。最常用的字段如下：
+Set the server address, CAN devices, camera serial numbers, initial pose, and inference mode in `client/config_agilex.yaml`:
 
 ```yaml
 python_bin: .venv/bin/python
@@ -97,77 +83,57 @@ inference:
   prompt: fold the sleeve
 ```
 
-连接 CAN 与 RealSense 后先执行硬件自检，再启动推理：
+After connecting CAN and RealSense devices, run a hardware check and start inference:
 
 ```bash
 ./scripts/run_client.sh --config client/config_agilex.yaml --check-hardware
 ./scripts/run_client.sh --config client/config_agilex.yaml --log-level INFO
 ```
 
-机器人运行存在安全风险。首次部署请降低速度、确认急停可用，并在机械臂工作空间外观察。
+Robot operation is hazardous. For the first deployment, reduce speed, verify the emergency stop, and stay outside the robot workspace.
 
-### 3. 无硬件测试
+### Mock test
 
-仓库包含小型测试数据，可启动 Mock action server 和客户端：
+Run the bundled hardware-free smoke test:
 
 ```bash
 ./scripts/run_client_mock.sh
 ```
 
-运行测试：
+Run the test suite with:
 
 ```bash
 uv run pytest test client/tests server/openpi packages
 ```
 
-## 常用配置
+## Configuration notes
 
-异步模式通过 `inference.async_mode` 选择：
+Select an asynchronous mode with `inference.async_mode`: `naive`, `temporal_smoothing`, `temporal_ensembling`, `rtc`, `legato`, `ttrtc`, or `vlash`. Mode-specific values live under `inference.modes.async.<mode>`.
 
-```text
-naive
-temporal_smoothing
-temporal_ensembling
-rtc
-legato
-ttrtc
-vlash
-```
+Legato and TTRTC must also be enabled on the server with `use_legato_inference` and `use_ttrtc_inference`. RTC, Legato, and TTRTC require matching model configurations and checkpoints.
 
-模式参数位于 `inference.modes.async.<mode>`。Legato 和 TTRTC 还需要分别在服务端开启 `use_legato_inference` 或 `use_ttrtc_inference`。RTC、Legato、TTRTC 使用匹配的模型配置和 checkpoint。
-
-同机部署时可将两端切换为共享内存：
+For same-host deployment, configure both sides with:
 
 ```yaml
 transport: shared_memory
 shared_memory_socket_path: /tmp/openpi_policy.sock
 ```
 
-启动脚本默认通过 `taskset` 绑定 CPU 核。部署到不同机器前，请根据硬件修改或移除脚本中的 `TASKSET_PREFIX`。
+The launch scripts pin CPU cores with `taskset`. Adjust or remove `TASKSET_PREFIX` for the target machine.
 
-## 记录与日志
+## Logs and integration
 
-客户端默认输出到 `client/inference_records/`，可在 `recording` 配置段控制模型 I/O、视频、动作 CSV 和运行事件。服务端日志路径由 `server/config.yaml` 中的 `log_file` 与 `event_log_file` 设置。
+Client recordings are written to `client/inference_records/` by default. Use the `recording` section to control model I/O, video, action CSV, and runtime event output. Server log paths are configured with `log_file` and `event_log_file`.
 
-## 采集服务对接
+For data-collection integration, use `client/run_inference_service.py`. See:
 
-采集架构使用 `client/run_inference_service.py`：
-
-```bash
-cd client
-python run_inference_service.py --config config_agilex.yaml
-python run_inference_service.py --list-modes
-```
-
-详见：
-
-- [采集对接说明](client/integration/README.md)
+- [Collection integration](client/integration/README.md)
 - [Inference Service TCP API](docs/INFERENCE_SERVICE_TCP_API.md)
-- [Piper XH 时间轴集成](docs/PIPER_XH_TIMEAXIS_INTEGRATION.md)
+- [Piper XH timeline integration](docs/PIPER_XH_TIMEAXIS_INTEGRATION.md)
 
 ## TensorRT
 
-将 `policy.type` 改为 `tensorrt`，并配置 `engine`、`assets_dir`、`asset_id`、`device` 和 `precision`。已有 ONNX 模型可通过以下命令构建 engine：
+Set `policy.type` to `tensorrt` and configure `engine`, `assets_dir`, `asset_id`, `device`, and `precision`. Build an engine from an existing ONNX model with:
 
 ```bash
 .venv/bin/python scripts/build_trt_engine.py \
@@ -175,4 +141,4 @@ python run_inference_service.py --list-modes
   --engine /path/to/model_fp16.engine
 ```
 
-运行环境需自行安装与 CUDA 匹配的 TensorRT。
+Install a TensorRT version compatible with the target CUDA runtime separately.
