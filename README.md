@@ -1,6 +1,6 @@
 <div align="center">
 
-# Closing the Timing Gap in Real-Time VLAs:<br>Stage-Aware Flow Denoising and System-Level Evaluation
+# Toward Real-Time VLAs:<br>Stage-Aware Two-Step Flow Denoising and System-Level Evaluation
 
 **Magiclab Robotics**
 
@@ -207,7 +207,7 @@ main.pdf                 paper
 
 ```bibtex
 @article{wu2026closing,
-  title  = {Closing the Timing Gap in Real-Time VLAs: Stage-Aware Flow Denoising and System-Level Evaluation},
+  title  = {Toward Real-Time VLAs: Stage-Aware Two-Step Flow Denoising and System-Level Evaluation},
   author = {Wu, Di and Shen, Rongtian and Liu, Ping and Shen, Yan and Yin, Zhenhan and Zuo, Shun and Chen, Xuhua and Zheng, He and Zhang, Lingfeng and Zhang, Jianglin and Zhang, Tao},
   year   = {2026}
 }
