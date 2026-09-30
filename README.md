@@ -1,27 +1,47 @@
-# Inference
+<div align="center">
 
-VLA policy server and Agilex Piper dual-arm inference client. The project supports WebSocket and shared-memory transports, direct SDK/CAN control, data-collection integration, and hardware-free mock testing.
+# Closing the Timing Gap in Real-Time VLAs:<br>Stage-Aware Flow Denoising and System-Level Evaluation
 
-[中文](README_zh-CN.md)
+**Magiclab Robotics**
 
-## Features
+[📄 Paper](main.pdf) · [🇨🇳 中文文档](README_zh-CN.md) · [🔌 Integration](client/integration/README.md)
 
-- Dual Piper arms with 14-dimensional actions
-- Sync, naive async, temporal smoothing, temporal ensembling, RTC, Legato, TTRTC, and VLASH modes
-- JAX checkpoint and TensorRT policy backends
-- WebSocket for remote deployment and shared memory for same-host deployment
-- Model I/O, video, action, latency, and event recording
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![JAX](https://img.shields.io/badge/Policy-JAX%20%7C%20TensorRT-76B900)](https://developer.nvidia.com/tensorrt)
+[![Robot](https://img.shields.io/badge/Robot-Agilex%20Piper-111827)](https://global.agilex.ai/product/piper)
+[![License](https://img.shields.io/badge/License-Apache--2.0-2ea44f)](LICENSE)
 
-## Installation
+</div>
 
-Python 3.11 and [uv](https://docs.astral.sh/uv/) are required.
+<p align="center">
+  <img src="assets/paper/figure5-framework.png" alt="Distributed real-time VLA inference and execution framework" width="100%">
+</p>
+
+## 📖 Overview
+
+This repository provides a distributed runtime for deploying and evaluating real-time VLA policies on two Agilex Piper arms. It separates observation acquisition, policy inference, action publication, and robot control so low-rate model updates can coexist with high-rate physical execution.
+
+The accompanying paper measures the complete timing path from camera and proprioception to robot motion, introduces stage-aware Flow Matching denoising, and compares real-time execution strategies on long-horizon bimanual garment folding.
+
+- **End-to-end timing:** measure camera, proprioception, model, transport, scheduling, and robot-response latency in one runtime.
+- **Stage-aware Flow Matching:** combine a long first-stage update with terminal refinement using the non-uniform schedule `1 → 0.3 → 0`.
+- **Practical execution:** deploy VLA policies on two Agilex Piper arms with independent observation, inference, publication, and control rates.
+- **Reproducible evaluation:** compare real-time execution methods with shared interfaces, action provenance, and hardware-free mock tests.
+
+## 🚀 News
+
+- **[2026/09/30]** 🔥 Source code released, including the paper, deployment scripts, integration guides, and hardware-free mock tests.
+
+## 🛠️ Installation
+
+The runtime is tested with **Python 3.11**. We recommend [uv](https://docs.astral.sh/uv/) for creating the virtual environment and resolving the pinned project dependencies. The JAX checkpoint backend requires a CUDA-compatible GPU and a matching CUDA runtime; TensorRT deployments additionally require a compatible TensorRT installation. The hardware client is optional and only needs the extra CAN and camera dependencies when running on a physical Piper platform.
 
 ```bash
 uv sync --python 3.11
 . .venv/bin/activate
 ```
 
-Robot clients also require:
+If you plan to connect the runtime to physical Agilex Piper arms, install the robot-client dependencies below. They provide the Piper SDK and camera interfaces; the hardware-free mock workflow does not require them.
 
 ```bash
 uv pip install -r client/requirements_inference.txt
@@ -29,14 +49,27 @@ sudo apt update
 sudo apt install -y can-utils ethtool
 ```
 
-## Quick start
+## 📦 Policy backends
 
-### Server
+| Backend | Configuration | Use |
+| --- | --- | --- |
+| JAX checkpoint | `policy.type: checkpoint` | Research and standard Flow Matching inference |
+| TensorRT engine | `policy.type: tensorrt` | Optimized deployment with CUDA/TensorRT |
+| Default policy | `policy.type: default` | Use a built-in policy configuration |
 
-Edit `server/config.yaml`:
+For checkpoints, `policy.config` must match the model architecture and training transforms. Normalization statistics are loaded from:
+
+```text
+/path/to/checkpoint/assets/<asset_id>/norm_stats.json
+```
+
+## 🚀 Quick start
+
+### Start the policy server
+
+Edit `server/config.yaml` to select the transport, listening port, default language instruction, and policy backend. For a checkpoint deployment, set `policy.config` to the model architecture used during training and point `policy.dir` to the exported checkpoint directory. If the checkpoint contains multiple asset bundles, use `asset_id` to select the matching normalization statistics.
 
 ```yaml
-python_bin: .venv/bin/python
 transport: websocket
 port: 8000
 default_prompt: fold the sleeve
@@ -48,27 +81,19 @@ policy:
   asset_id: OpenDriveLab-org/Kai0
 ```
 
-`policy.config` must match the model architecture and transforms used for training. Norm stats are loaded from:
-
-```text
-/path/to/checkpoint/assets/<asset_id>/norm_stats.json
-```
-
-Start the server:
+After saving the configuration, launch the policy server. The server loads the selected checkpoint, opens the configured transport endpoint, and waits for client observation requests:
 
 ```bash
 ./scripts/run_server.sh --config server/config.yaml
 ```
 
-Use `./scripts/run_server.sh --dry-run` to inspect the launch command first.
+Use `./scripts/run_server.sh --dry-run` to inspect the resolved command.
 
-### Client
+### Start the Piper client
 
-Set the server address, CAN devices, camera serial numbers, initial pose, and inference mode in `client/config_agilex.yaml`:
+Before starting the client, update `client/config_agilex.yaml` with the policy-server address, CAN interface names, RealSense serial numbers, initial arm pose, and runtime rates. `inference_rate` controls how often the policy receives a new observation; `publish_rate` controls how often commands are sent to the robot:
 
 ```yaml
-python_bin: .venv/bin/python
-
 server:
   host: 127.0.0.1
   port: 8000
@@ -83,57 +108,57 @@ inference:
   prompt: fold the sleeve
 ```
 
-After connecting CAN and RealSense devices, run a hardware check and start inference:
+Run a hardware check before motion:
 
 ```bash
 ./scripts/run_client.sh --config client/config_agilex.yaml --check-hardware
 ./scripts/run_client.sh --config client/config_agilex.yaml --log-level INFO
 ```
 
-Robot operation is hazardous. For the first deployment, reduce speed, verify the emergency stop, and stay outside the robot workspace.
+> ⚠️ Start at reduced speed, verify the emergency stop, and stay outside the robot workspace.
 
-### Mock test
-
-Run the bundled hardware-free smoke test:
+### Run without hardware
 
 ```bash
 ./scripts/run_client_mock.sh
+uv run pytest test packages server/openpi
 ```
 
-Run the test suite with:
+## ⚙️ Real-time execution modes
 
-```bash
-uv run pytest test client/tests server/openpi packages
+- **`naive`** — Asynchronous inference beside robot execution.
+- **`temporal_smoothing`** — Blend the previous chunk tail with the new prefix.
+- **`temporal_ensembling`** — Aggregate overlapping action predictions.
+- **`rtc`** — Constrain generation with committed actions.
+- **`legato`** — Learned native action continuation.
+- **`ttrtc`** — Training-time latency-aware continuation.
+- **`vlash`** — Future-state-aware action alignment.
+
+Select a mode with `inference.async_mode`; parameters live under `inference.modes.async.<mode>`.
+
+## 🔌 Deployment
+
+### 🌐 WebSocket
+
+Use WebSocket when the GPU policy server and the robot client run on separate hosts. Set the server port below, then point the client configuration to the server machine's reachable IP address. This mode is convenient when the robot computer handles sensors and control while a separate workstation handles policy inference:
+
+```yaml
+transport: websocket
+port: 8000
 ```
 
-## Configuration notes
+### 🧠 Shared memory
 
-Select an asynchronous mode with `inference.async_mode`: `naive`, `temporal_smoothing`, `temporal_ensembling`, `rtc`, `legato`, `ttrtc`, or `vlash`. Mode-specific values live under `inference.modes.async.<mode>`.
-
-Legato and TTRTC must also be enabled on the server with `use_legato_inference` and `use_ttrtc_inference`. RTC, Legato, and TTRTC require matching model configurations and checkpoints.
-
-For same-host deployment, configure both sides with:
+Use shared memory when the policy server and robot client run on the same host. The Unix socket path must be accessible to both processes and should be removed or changed if another service already uses it. Shared memory avoids network serialization and is intended for low-latency local deployment:
 
 ```yaml
 transport: shared_memory
 shared_memory_socket_path: /tmp/openpi_policy.sock
 ```
 
-The launch scripts pin CPU cores with `taskset`. Adjust or remove `TASKSET_PREFIX` for the target machine.
+### ⚡ TensorRT
 
-## Logs and integration
-
-Client recordings are written to `client/inference_records/` by default. Use the `recording` section to control model I/O, video, action CSV, and runtime event output. Server log paths are configured with `log_file` and `event_log_file`.
-
-For data-collection integration, use `client/run_inference_service.py`. See:
-
-- [Collection integration](client/integration/README.md)
-- [Inference Service TCP API](docs/INFERENCE_SERVICE_TCP_API.md)
-- [Piper XH timeline integration](docs/PIPER_XH_TIMEAXIS_INTEGRATION.md)
-
-## TensorRT
-
-Set `policy.type` to `tensorrt` and configure `engine`, `assets_dir`, `asset_id`, `device`, and `precision`. Build an engine from an existing ONNX model with:
+Build a TensorRT engine from an existing ONNX model when the target GPU and CUDA/TensorRT runtime are fixed. The generated engine is hardware and precision dependent, so build it on a machine that matches the intended deployment environment. Use FP16 for the common CUDA deployment path, or select another precision supported by the model and GPU:
 
 ```bash
 .venv/bin/python scripts/build_trt_engine.py \
@@ -141,4 +166,53 @@ Set `policy.type` to `tensorrt` and configure `engine`, `assets_dir`, `asset_id`
   --engine /path/to/model_fp16.engine
 ```
 
-Install a TensorRT version compatible with the target CUDA runtime separately.
+Configure `policy.type: tensorrt`, `engine`, `assets_dir`, `asset_id`, `device`, and `precision`.
+
+## 🗂️ Integrations
+
+Client records are written to `client/inference_records/` by default. The `recording` section controls model I/O, video, action CSV, runtime events, and timing metadata.
+
+- [Collection integration](client/integration/README.md)
+- [Inference Service TCP API](docs/INFERENCE_SERVICE_TCP_API.md)
+- [Piper XH timeline integration](docs/PIPER_XH_TIMEAXIS_INTEGRATION.md)
+
+```bash
+cd client
+python run_inference_service.py --config config_agilex.yaml --list-modes
+python run_inference_service.py --config config_agilex.yaml --mode temporal_smoothing
+```
+
+## 🌐 VLA / WAM ecosystem
+
+This runtime sits between an action-generating policy and a physical robot.
+
+- **VLA policies:** [OpenPI](https://github.com/Physical-Intelligence/openpi), [OpenVLA](https://github.com/openvla/openvla), [π₀ / π₀.₅](https://www.physicalintelligence.company/download/pi0.pdf) — open-source vision-language-action policies for action generation and robot control.
+- **Robot learning:** [LeRobot](https://github.com/huggingface/lerobot) — shared datasets, robot abstractions, training tools, and evaluation interfaces.
+- **World–Action Models:** [OpenWAM](https://github.com/OpenWAM-Official/OpenWAM), [OpenWAM project](https://openwam.stanford.edu/) — future-state and video-conditioned modeling for predictive robot action.
+
+## 📁 Repository
+
+```text
+client/                  robot runtime, configs, integrations, tools
+server/                  policy server and model implementations
+packages/openpi-client/  WebSocket and shared-memory clients
+scripts/                 launchers, CAN helpers, TensorRT tooling
+docs/                    API and integration notes
+test/                    mock fixtures and tests
+assets/paper/            paper figures used in this README
+main.pdf                 paper
+```
+
+## 📝 Citation
+
+```bibtex
+@article{wu2026closing,
+  title  = {Closing the Timing Gap in Real-Time VLAs: Stage-Aware Flow Denoising and System-Level Evaluation},
+  author = {Wu, Di and Shen, Rongtian and Liu, Ping and Shen, Yan and Yin, Zhenhan and Zuo, Shun and Chen, Xuhua and Zheng, He and Zhang, Lingfeng and Zhang, Jianglin and Zhang, Tao},
+  year   = {2026}
+}
+```
+
+## 📜 License
+
+[Apache License 2.0](LICENSE)
